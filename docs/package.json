@@ -1,0 +1,22 @@
+{
+  "name": "@rw3iss/tracker-docs",
+  "version": "1.0.0",
+  "description": "rw3iss tracker platform documentation — Astro Starlight site",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "astro dev --host 0.0.0.0 --port 4321",
+    "prebuild": "node bin/update-sdk-versions.mjs",
+    "build": "astro build",
+    "preview": "astro preview --host 0.0.0.0 --port 4321",
+    "check": "astro check",
+    "clean": "rm -rf dist .astro"
+  },
+  "dependencies": {
+    "@astrojs/starlight": "^0.36.0",
+    "astro": "^5.18.0",
+    "astro-mermaid": "^2.0.1",
+    "mermaid": "^11.14.0",
+    "sharp": "^0.34.0"
+  }
+}

@@ -1,0 +1,91 @@
+---
+title: rw3iss Tracker
+description: Self-hosted event + error tracking for the rw3iss platform — Sentry-replacement with a built-in dashboard, multi-language SDKs, and a clean ingestion pipeline.
+template: splash
+hero:
+  tagline: Self-hosted event + error tracking. One ingestion pipeline, every rw3iss service.
+  actions:
+    # Hero action links don't auto-prefix with astro.config base, so the
+    # full mount path (DOCS_PATH=docs) is included here. If DOCS_PATH ever
+    # changes away from the default, update these two link values too.
+    - text: Quick start
+      link: /docs/quick-start/
+      icon: right-arrow
+      variant: primary
+    - text: HTTP API contract
+      link: /docs/api/contract/
+      icon: external
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+## What is the tracker
+
+A self-hosted event + error tracking platform. Every rw3iss service emits
+events through a tiny SDK; events are validated by a Go ingestion server,
+queued in Redis, drained into Postgres by `tracker-server`, and visible in
+real time via the dashboard at `tracker.ryanweiss.net/dashboard`.
+
+It replaces Sentry for our error capture, and doubles as a domain-event log
+for any signal we want to inspect later (auction state, payment outcomes,
+etc.). Everything runs on our own infrastructure — no third-party SaaS, no
+event-volume surprises on the bill.
+
+<CardGrid>
+  <Card title="Just send an event" icon="rocket">
+    Three lines of TypeScript / Go / PHP — see [Quick start](/docs/quick-start/).
+  </Card>
+  <Card title="Wire format" icon="document">
+    Stable HTTP contract — see the [API contract](/docs/api/contract/).
+  </Card>
+  <Card title="Architecture" icon="puzzle">
+    How the emitter / ingest / consumer pieces fit — see [Architecture](/docs/concepts/architecture/).
+  </Card>
+  <Card title="Operations" icon="setting">
+    Configure tracker-server, the dashboard, this docs site — see [Operations](/docs/operations/config/).
+  </Card>
+</CardGrid>
+
+## At a glance
+
+```mermaid
+flowchart TB
+    Apps["Apps<br/>(browsers · Node · Go · PHP)"]
+    Ingest["tracker-ingest (Go)<br/>~5 MB RAM"]
+    Redis[("Redis LIST<br/>tracker:ingest")]
+    Server["tracker-server (Nest)<br/>~120 MB RAM"]
+    Postgres[(Postgres)]
+    Dashboard["Dashboard<br/>/dashboard"]
+    Docs["Docs<br/>/docs"]
+
+    Apps -->|HTTPS POST<br/>/ingest/events| Ingest
+    Ingest -->|LPUSH| Redis
+    Redis -->|RPOP batch| Server
+    Server --> Postgres
+    Server --> Dashboard
+    Server --> Docs
+
+    classDef client    fill:#312e81,stroke:#6366f1,color:#e0e7ff,stroke-width:2px
+    classDef go        fill:#064e3b,stroke:#10b981,color:#d1fae5,stroke-width:2px
+    classDef redis     fill:#7f1d1d,stroke:#ef4444,color:#fecaca,stroke-width:2px
+    classDef nest      fill:#78350f,stroke:#f59e0b,color:#fef3c7,stroke-width:2px
+    classDef db        fill:#3b0764,stroke:#a855f7,color:#f3e8ff,stroke-width:2px
+    classDef ui        fill:#14532d,stroke:#22c55e,color:#dcfce7,stroke-width:2px
+
+    class Apps client
+    class Ingest go
+    class Redis redis
+    class Server nest
+    class Postgres db
+    class Dashboard,Docs ui
+```
+
+## Repos
+
+| Repo                            | Role                                                        |
+|---------------------------------|-------------------------------------------------------------|
+| [tracker](https://github.com/rw3iss/tracker)         | TS library — emitter + NestJS consumer engine + dashboard |
+| [tracker-server](https://github.com/rw3iss/tracker-server) | NestJS deployment — runs the consumer, dashboard, this docs site |
+| [tracker-ingest](https://github.com/rw3iss/tracker-ingest) | Go HTTP ingest — minimal, absorbs bursts, LPUSH to Redis |
+| [tracker-go](https://github.com/rw3iss/tracker-go)         | Go emitter — stdlib-only, mirrors the TS surface |
+| [tracker-php](https://github.com/rw3iss/tracker-php)       | PHP emitter (Composer)                          |

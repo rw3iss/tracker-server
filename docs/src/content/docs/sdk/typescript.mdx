@@ -1,0 +1,266 @@
+---
+title: TypeScript / JavaScript
+description: '@rw3iss/tracker — emitter API, plugins, transports, in-process self-tracking.'
+sidebar:
+  order: 1
+---
+import SdkVersion from '../../../components/SdkVersion.astro';
+
+<SdkVersion sdk="ts" />
+
+The TS package is universal — the same module works in browsers, Node
+backends, NestJS apps, even service workers (under a different subpath).
+Browser apps import the default; NestJS backends importing the consumer
+half use the `/consumer` subpath.
+
+## Install
+
+```bash
+# GitHub Packages — one-time .npmrc setup:
+echo "@rw3iss:registry=https://npm.pkg.github.com" >> ~/.npmrc
+echo "//npm.pkg.github.com/:_authToken=YOUR_GITHUB_TOKEN" >> ~/.npmrc
+
+npm install @rw3iss/tracker
+```
+
+## Emitter — the 95% case
+
+```ts
+import { TrackerClient, tracker } from '@rw3iss/tracker';
+
+TrackerClient.init({
+    endpoint:    'https://tracker.ryanweiss.net/ingest/events',
+    appId:       'my-service',
+    environment: 'production',
+    appVersion:  '1.4.2',
+
+    // Severity gate. 'event' always passes — see Concepts → Events.
+    minLevel:    'info',
+
+    // Auto: window.onerror + unhandledrejection (browser) or
+    // process.on('uncaughtException'/'unhandledRejection') (Node).
+    autoCapture: true,
+
+    // Capture failed fetch / XHR (status 0 or >= 400) as error events.
+    // Response body is captured by default — see "Network capture" below.
+    networkCapture: { errorsOnly: true },
+
+    // Browser-only: stamps url, userAgent, language, viewport, etc. on
+    // every event's context. true = standard set; 'full' = everything;
+    // 'minimal' = url+path only; object = per-field overrides.
+    contextEnrichment: true,
+
+    // Controls the optional fields on event.error (file/line/code/
+    // previous chain). true / 'full' = every optional field (default);
+    // false / 'minimal' = name/message/stack only; object = per-field
+    // overrides (e.g. { previous: false }). Mirrors the Go and PHP SDKs.
+    errorEnrichment: true,
+
+    // Last-chance redact / drop. Return null to discard.
+    beforeSend: (event) => {
+        if (event.payload?.password) return null;
+        return event;
+    },
+
+    // Per-emitter dedup opt-out — see Concepts → Deduplication.
+    // Stamps event.dedup = false on captured events that match. The
+    // consumer's deduplicator then skips dedup for those events
+    // entirely. Use for intentional repeated events from the same
+    // user (bid lifecycle markers, analytics, retries that genuinely
+    // represent distinct occurrences).
+    dedup: {
+        bypassMessages:  ['bid.', 'auction.', 'order.'],
+        bypassPredicate: (e) => e.type === 'event',
+    },
+
+    // Expose the emitter on globalThis for REPL access.
+    globalName: 'tracker',
+});
+
+// Anywhere in the codebase:
+tracker.error(new Error('oops'),       { orderId: 1 });
+tracker.warn ('rate-limit hit',        { ip: '1.2.3.4' });
+tracker.info ('deploy_started',        { sha: 'abc' });
+tracker.event('button_click',          { id: 'cta' });
+
+// Sticky context — stamped onto every subsequent event.
+tracker.setContext({ userId: 'u_123', environment: 'production' });
+
+// Manual flush (e.g. before navigation):
+await tracker.flush();
+```
+
+Default severity → method mapping is in
+[Concepts → Events](/docs/concepts/events/#convenience-methods).
+
+## Subpath exports
+
+| Import path                      | What it provides                                            |
+|----------------------------------|-------------------------------------------------------------|
+| `@rw3iss/tracker`              | Emitter — `TrackerClient`, `tracker`, all client types.     |
+| `@rw3iss/tracker/emitter`      | Explicit alias for the default.                             |
+| `@rw3iss/tracker/consumer`     | NestJS engine — `TrackerModule`, `TrackerService`, plugins. |
+| `@rw3iss/tracker/storage`      | Storage adapters + `TrackerQueryHelpers`.                   |
+| `@rw3iss/tracker/notifications`| Multi-channel alerting plugin.                              |
+| `@rw3iss/tracker/breadcrumbs`  | Breadcrumb collectors + plugin.                             |
+| `@rw3iss/tracker/analytics`    | GA4-style self-hosted analytics plugin.                     |
+| `@rw3iss/tracker/ga`           | Google Analytics 4 plugin (gtag.js + Consent Mode v2).      |
+| `@rw3iss/tracker/sw`           | Service-worker background-sync helper.                      |
+| `@rw3iss/tracker/types`        | Shared types only — no runtime code.                        |
+
+## Plugins
+
+Plugins are how you opt in to extra capture surfaces without bloating
+the default install.
+
+### Breadcrumbs
+
+Captures the last N navigation / click / console / network events and
+attaches them to the next error.
+
+```ts
+import { BreadcrumbsPlugin } from '@rw3iss/tracker/breadcrumbs';
+
+TrackerClient.init({
+    // ... base config ...
+    plugins: [new BreadcrumbsPlugin({
+        maxItems:         30,
+        attachTo:         ['error'],
+        clearAfterAttach: true,
+        navigation: true,
+        click:      true,
+        console:    { levels: ['error', 'warn'] },
+        network:    { ignoreUrls: [/\/tracker\//] }, // avoid feedback loop
+    })],
+});
+```
+
+### Network capture — failed-request events
+
+`networkCapture` monkey-patches `window.fetch` and `XMLHttpRequest` and emits a tracker event for every request that returns status `0` (network error / CORS / abort) or `>= 400`. The response body is captured and attached to the event by default — without it the dashboard sees `POST /bids/placeBid — 400` and nothing else, which is rarely actionable.
+
+```ts
+TrackerClient.init({
+    endpoint: '...',
+    appId:    'buyer-portal',
+    networkCapture: {
+        captureFetch: true,                  // default
+        captureXhr:   true,                  // default
+        errorsOnly:   true,                  // default — false to log every request
+        ignoreUrls:   [/\/heartbeat/, 'crisp.chat'],
+        body: {
+            enabled:       true,             // default — false to keep status-only
+            maxBytes:      8192,             // default — body text truncated past this
+            readTimeoutMs: 1500,             // default — abandoned read past this
+        },
+    },
+});
+```
+
+What lands on the event for `POST /bids/placeBid` returning `400 { "message": "Bid below $1020" }`:
+
+```json
+{
+  "type": "error",
+  "message": "POST /bids/placeBid — 400: Bid below $1020",
+  "category": "network",
+  "payload": {
+    "method": "POST",
+    "url":    "/bids/placeBid",
+    "status": 400,
+    "body":   { "message": "Bid below $1020" },
+    "bodyTruncated": false
+  },
+  "error": { "name": "HttpError400", "message": "Bid below $1020" },
+  "tags": ["auto-capture", "network"]
+}
+```
+
+How body capture works:
+
+- **Fetch.** `res.clone()` so the original response stays untouched for the calling code, then a streaming `getReader()` pulls bytes until either `maxBytes` or `readTimeoutMs` is hit. Stuck/streaming responses are abandoned with `bodyTruncated: true` — never block user code.
+- **XHR.** Body is already buffered at `loadend`; `responseText` is read (silently skipped when `responseType !== 'text' | ''`) and capped to `maxBytes`.
+- **Best-effort JSON parse.** Bodies that parse as JSON land as objects in `payload.body`; the rest stay strings. Either way the dashboard renders structured payloads correctly.
+- **`error` field synthesis.** `name = HttpError<status>`; `message` is derived from `body.message → body.error.message → body.error → first 240 chars of raw text`. `event.error` is no longer `null` for HTTP failures.
+- **PII.** `beforeSend` runs after this — return a redacted copy or `null` for endpoints whose error responses can leak sensitive data.
+
+The `network` breadcrumb collector (`breadcrumbs.network.body`) takes the same `{ enabled, maxBytes, readTimeoutMs }` shape with smaller defaults — `maxBytes: 2048`, `readTimeoutMs: 1000` — since breadcrumbs piggyback on other events.
+
+### Analytics + Google Analytics 4
+
+The analytics + GA plugins handle visitor identity, sessions, page
+views, scroll depth, outbound clicks, downloads, form interactions,
+and (via GA) the full Consent Mode v2 dance. Three modes:
+
+- `ga-only` — GA is the only analytics surface.
+- `analytics-only` — self-hosted analytics, no GA.
+- `tandem` — both run; identity is shared.
+
+See the dedicated [Analytics & GA reference](/docs/sdk/analytics-ga/) page.
+
+## Consumer — NestJS backend
+
+```ts
+import { TrackerModule } from '@rw3iss/tracker/consumer';
+import { EventStoragePlugin } from '@rw3iss/tracker/storage';
+
+@Module({
+  imports: [
+    TrackerModule.register({
+      plugins:        [EventStoragePlugin.fromDataSource(dataSource)],
+      deduplication:  {
+        enabled: true,
+        windowMs: 300_000,
+        // Server-side bypass is the cross-app / emergency layer. The
+        // primary opt-out is per-event (event.dedup === false), stamped
+        // by each emitter's TrackerClient.init({ dedup: {...} }) policy.
+        // See /docs/operations/config/#bypassing-dedup-for-intentional-repeated-events
+        bypassDedup: (e) => e.type === 'event',
+      },
+      publicIngestion: true, // bypass JWT guards on /events
+      apiKey:          ['key-for-go-service', 'key-for-php-app'],
+    }),
+  ],
+})
+export class AppModule {}
+```
+
+### In-process self-tracking
+
+A NestJS app that wants to capture its own errors *into its own*
+`TrackerModule` should use `DirectTransport` — no localhost HTTP loop.
+
+```ts
+import { TrackerClient } from '@rw3iss/tracker';
+import { TrackerService, DirectTransport } from '@rw3iss/tracker/consumer';
+
+// After NestFactory.create() resolves:
+TrackerClient.init({
+    appId:       'api-server',
+    environment: 'production',
+    transport:   new DirectTransport(() => TrackerService.instance()),
+    globalName:  'tracker',
+});
+```
+
+## Quick gotchas
+
+- **`destroy()` is async** — flushes before tearing down. Always `await`.
+- **`enabled: false`** disables every listener / queue / flush — no
+  side effects, methods become no-ops. Use for development or
+  feature-flagging.
+- **`minLevel`** is severity-only; `event` always passes (it's a
+  category, not a severity).
+- **Never** point `endpoint` at the same NestJS process — that's a
+  wasteful HTTP loop. Use `DirectTransport`.
+
+## Where to next
+
+- [Architecture](/docs/concepts/architecture/) for the big-picture flow.
+- [Enrichment](/docs/concepts/enrichment/) — the three-layer model
+  (`contextEnrichment`, `errorEnrichment`, plugins) and the per-field
+  decision guide.
+- [HTTP API contract](/docs/api/contract/) — for the wire format every
+  emitter speaks.
+- [Operations → Configuration](/docs/operations/config/) for every env var
+  on the server side.

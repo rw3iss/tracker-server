@@ -1,0 +1,52 @@
+{
+  "name": "@rw3iss/tracker-server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Centralized tracker event ingestion and dashboard service",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "dev":               "cross-env NODE_ENV=development nest start --watch",
+    "build":             "nest build --builder swc && pnpm dashboard:bundle",
+    "dashboard:bundle":  "node -e \"require('fs').cpSync('src/dashboard','dist/dashboard',{recursive:true})\" && node bin/generate-dashboard-version.mjs",
+    "start":             "node dist/main.js",
+    "start:prod":        "cross-env NODE_ENV=production node dist/main.js",
+    "docs:install":      "cd docs && pnpm install --no-frozen-lockfile",
+    "docs:dev":          "cd docs && pnpm dev",
+    "docs:build":        "cd docs && pnpm install --no-frozen-lockfile && pnpm build",
+    "docs:preview":      "cd docs && pnpm preview",
+    "build:all":         "pnpm build && pnpm docs:build",
+    "tracker:clear-events": "tsx scripts/clear-events.ts"
+  },
+  "dependencies": {
+    "@nestjs/common": "^11.1.6",
+    "@nestjs/core": "^11.1.6",
+    "@nestjs/platform-fastify": "^11.1.6",
+    "@nestjs/typeorm": "^11.0.0",
+    "@rw3iss/tracker": "github:rw3iss/tracker",
+    "bullmq": "^5.52.0",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.14.2",
+    "cross-env": "^10.1.0",
+    "dotenv": "^17.2.3",
+    "fastify": "5.8.4",
+    "pg": "^8.16.3",
+    "redis": "^5.12.1",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2",
+    "typeorm": "^0.3.27"
+  },
+  "devDependencies": {
+    "@nestjs/cli": "^11.0.10",
+    "@swc/cli": "^0.8.1",
+    "@swc/core": "^1.15.30",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.2"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@rw3iss/tracker"
+    ]
+  }
+}

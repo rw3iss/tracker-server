@@ -1,0 +1,34 @@
+/* Tracker docs — minor brand tweaks on top of Starlight defaults. */
+
+:root {
+    --sl-color-accent-low:  #1e1b4b;
+    --sl-color-accent:      #6366f1;
+    --sl-color-accent-high: #c7d2fe;
+}
+
+:root[data-theme='dark'] {
+    --sl-color-accent-low:  #312e81;
+    --sl-color-accent:      #818cf8;
+    --sl-color-accent-high: #e0e7ff;
+}
+
+/* Slightly tighter code blocks — better for the API contract dumps. */
+.sl-markdown-content pre {
+    font-size: 0.85em;
+}
+
+/* Inline `code` inside table cells is almost always a short keyword (a
+ * type name, status name, env-var, header, …) where wrapping looks
+ * worse than a slightly wider column. The narrow Starlight content
+ * column was squeezing first-column code values onto two lines. */
+.sl-markdown-content table :is(td, th) code {
+    white-space: nowrap;
+}
+
+/* Give first-column cells a touch more horizontal breathing room.
+ * Default Starlight padding is ~0.625rem; 1.25rem here = ~10-12px wider,
+ * which is enough to lift "field" / "limit" / "error" off the rule
+ * without forcing the column wide enough to feel empty. */
+.sl-markdown-content table :is(td, th):first-child {
+    padding-right: 1.5rem;
+}

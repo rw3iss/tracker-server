@@ -1,0 +1,207 @@
+---
+title: PHP
+description: tracker-php — Composer-installable PHP emitter, with first-class Laravel support.
+sidebar:
+  order: 3
+---
+import SdkVersion from '../../../components/SdkVersion.astro';
+
+<SdkVersion sdk="php" />
+
+The PHP emitter speaks the same wire format as the TypeScript and Go
+emitters — events from PHP code paths land in the same dashboard as
+everything else. It works in any PHP project (vanilla, framework-X,
+legacy WordPress) and ships a first-class Laravel integration.
+
+## Install
+
+```bash
+composer require rw3iss/tracker
+```
+
+## Laravel — auto-wired
+
+For Laravel 10 / 11 / 12 the package is auto-discovered. Two steps:
+
+```bash
+composer require rw3iss/tracker
+```
+
+```env
+TRACKER_ENDPOINT=https://tracker.ryanweiss.net
+TRACKER_API_KEY=optional-shared-secret
+```
+
+Then anywhere in the app:
+
+```php
+use Tracker;
+
+Tracker::error($exception, ['order_id' => $order->id]);
+Tracker::warn ('rate-limit hit', ['ip' => $request->ip()]);
+Tracker::info ('user_signup',    ['plan' => $user->plan]);
+Tracker::event('checkout_completed', ['amount' => $cart->total]);
+```
+
+That's the integration. The Facade resolves to a singleton; the queue
+flushes on `terminating`; and the auto-features below are wired in
+automatically.
+
+### What's wired in automatically
+
+| Feature | Behaviour | Toggle env var |
+|---|---|---|
+| **Exception capture** | Every reportable exception forwarded to the tracker — HTTP, queue, console, scheduler — without losing Laravel's normal log entries. | `TRACKER_AUTO_EXCEPTIONS=false` |
+| **Request snapshot** | When an exception fires during an HTTP request, attaches a sanitized snapshot — URL, method, route, redacted headers and body — to the error's payload. JSON / form bodies only; capped at 4 KB. | `TRACKER_AUTO_REQUEST_SNAPSHOT=false` |
+| **Queue-failure capture** | `JobFailed` listener captures jobs that exhausted retries with connection/queue/job name + attempt count. | `TRACKER_AUTO_QUEUE=false` |
+| **Request context** | Stamps `url`, `route`, `method`, `ip`, `userAgent`, and authenticated `userId` onto every event. | `TRACKER_AUTO_CONTEXT=false` |
+| **Filament tenant context** | Stamps the resolved Filament tenant id as `context.tenantId` on every event. Silently no-ops in apps that don't use Filament. | `TRACKER_AUTO_TENANT=false` |
+| **End-of-request flush** | `terminating` callback flushes the queue — works for FPM, Octane, queue workers. | always on |
+
+### Redaction
+
+Sensitive values in the request snapshot are redacted before they leave
+the process. The default strategy preserves a short prefix so an
+operator can correlate "which key" without seeing the secret —
+`sk_live_abc123def` becomes `sk_l[REDACTED]`. Values shorter than the
+preview length collapse to `[REDACTED]` with no prefix.
+
+| Knob | Env var | Default |
+|---|---|---|
+| Preview length (leading chars kept) | `TRACKER_REDACTION_PREVIEW_CHARS` | `4` |
+| Redacted headers (comma-separated) | `TRACKER_REDACTION_HEADERS` | `authorization, cookie, set-cookie, x-api-key, x-tracker-key, ...` |
+| Redacted body keys (case-insensitive, recursive) | `TRACKER_REDACTION_BODY_KEYS` | `password, token, secret, access_token, credit_card, ssn, ...` |
+| Max serialized body bytes | `TRACKER_REDACTION_MAX_BODY_BYTES` | `4096` |
+
+For non-trivial overrides, publish the config and edit `config/tracker.php`
+directly — the comma-separated env vars are convenient but limited.
+
+### Error enrichment
+
+`errorEnrichment` controls the optional fields on `event.error`
+(file/line/code/previous chain). Mirrors the cross-SDK grammar — see
+[Concepts → Enrichment](/docs/concepts/enrichment/) for the full picture.
+
+```php
+'errorEnrichment' => true,                // 'full' (default)
+'errorEnrichment' => false,               // 'minimal' — name/message/stack only
+'errorEnrichment' => [                    // per-field overrides on top of full
+    'file' => true, 'line' => true,
+    'code' => false, 'previous' => false,
+],
+```
+
+Or via env: `TRACKER_ERROR_ENRICHMENT=minimal`.
+
+### Master switch
+
+```env
+TRACKER_ENABLED=false
+```
+
+Calls to `Tracker::*` become safe no-ops. Useful for local dev without
+guarding every call.
+
+### Custom config
+
+```bash
+php artisan vendor:publish --tag=tracker-config
+```
+
+Edit `config/tracker.php` for non-env-var settings (custom
+`beforeSend` filter, etc.).
+
+### Optional middleware (rare)
+
+Skip this unless you want per-route control or have turned automatic
+exception capture off:
+
+```php
+// Laravel 11+ — bootstrap/app.php
+->withMiddleware(function (Middleware $middleware) {
+    $middleware->web(append: [
+        \rw3iss\Tracker\Laravel\TrackerMiddleware::class,
+    ]);
+})
+
+// Laravel 10 — app/Http/Kernel.php
+protected $middlewareGroups = [
+    'web' => [
+        \rw3iss\Tracker\Laravel\TrackerMiddleware::class,
+    ],
+];
+```
+
+## Vanilla PHP
+
+```php
+<?php
+require_once 'vendor/autoload.php';
+
+\rw3iss\Tracker\TrackerClient::init([
+    'endpoint'    => 'https://tracker.ryanweiss.net',
+    'appId'       => 'legacy-cms',
+    'environment' => 'production',
+    'appVersion'  => '3.2.1',
+    'apiKey'      => getenv('TRACKER_API_KEY'),
+
+    // Per-emitter dedup opt-out — see Operations → Deduplication.
+    // SDK stamps `dedup => false` on captured events that match.
+    'dedup' => [
+        'bypassMessages'  => ['bid.', 'auction.', 'order.'],
+        // Composes with OR. Throwables are caught — never block capture.
+        'bypassPredicate' => fn(array $e) => ($e['type'] ?? null) === 'event',
+    ],
+]);
+
+$tracker = \rw3iss\Tracker\TrackerClient::instance();
+
+try {
+    doExpensiveThing();
+} catch (\Throwable $e) {
+    $tracker->error($e, ['stage' => 'render']);
+}
+
+$tracker->info('cron_completed', ['job' => 'reindex', 'rows' => 12_345]);
+$tracker->event('user_signup', ['plan' => 'pro']);
+
+// PHP is request-scoped — flush before exit. The constructor registers
+// a shutdown function automatically, so this is belt-and-braces.
+$tracker->flush();
+```
+
+## Surface
+
+| Method                                              | Notes                                |
+|-----------------------------------------------------|--------------------------------------|
+| `TrackerClient::init(array $config): self`          | Static factory — also stores singleton. |
+| `TrackerClient::instance(): ?self`                  | Get the singleton. `null` before init.  |
+| `error(\Throwable $e, array $extras = [])`          | Stack trace captured automatically.    |
+| `warn(string $msg, array $payload = [])`            |                                      |
+| `info(string $msg, array $payload = [])`            |                                      |
+| `debug(string $msg, array $payload = [])`           | Subject to `minLevel`.               |
+| `event(string $name, array $payload = [])`          | Always passes severity.              |
+| `track(string $name, array $payload, $type='event')`| Auto-extracts `category` from `'auction:stale-state'`. |
+| `setContext(array $ctx)`                            | Sticky — merged into every event.    |
+| `clearContext()`                                    |                                      |
+| `getContext(): array`                               |                                      |
+| `flush(): void`                                     | Synchronous HTTP POST.               |
+| `close(): void`                                     | Alias for `flush`.                   |
+
+## Behaviour notes
+
+- **PHP is request-scoped.** The emitter doesn't run a background
+  worker — events are queued in memory for the request and flushed on
+  `flush()` or `register_shutdown_function`. Long-running CLIs (cron,
+  queue workers, daemons) should call `flush()` periodically.
+- **Network failures don't bubble.** A failed POST is logged via
+  `error_log` when `debug=true` and otherwise silently dropped. The
+  tracker degrades gracefully — your app code never sees a tracker
+  exception during normal operation.
+- **5xx + network errors retry** with exponential backoff (0s, 1s, 2s).
+  4xx never retries.
+
+## See also
+
+- [HTTP API contract](/docs/api/contract/) — the wire format the SDK speaks
+- [tracker-php on GitHub](https://github.com/rw3iss/tracker-php)

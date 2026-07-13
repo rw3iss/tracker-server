@@ -1,0 +1,129 @@
+---
+title: Go
+description: tracker-go — stdlib-only Go emitter. Same surface as the TS client, no third-party deps.
+sidebar:
+  order: 2
+---
+import SdkVersion from '../../../components/SdkVersion.astro';
+
+<SdkVersion sdk="go" />
+
+The Go SDK is intentionally small — a single package using only the
+standard library. Same capture API as the TS emitter, same wire format,
+no transitive dependency footprint to manage in Go services.
+
+## Install
+
+```bash
+go get github.com/rw3iss/tracker-go
+```
+
+## Init + capture
+
+```go
+package main
+
+import (
+    "errors"
+    "github.com/rw3iss/tracker-go"
+)
+
+func main() {
+    tracker.Init(tracker.Config{
+        Endpoint:    "https://tracker.ryanweiss.net/ingest/events",
+        AppID:       "auction-worker",
+        Environment: "production",
+        AppVersion:  "v1.4.2",
+        APIKey:      "optional-x-tracker-key",
+
+        // Auto-flush behaviour
+        BatchSize:     100,
+        FlushInterval: 5 * time.Second,
+        QueueSize:     10_000,
+
+        // Per-emitter dedup opt-out. SDK stamps Event.Dedup = &false on
+        // captured events that match. The consumer's deduplicator then
+        // skips dedup for those events entirely. See Operations →
+        // Deduplication for the layered model.
+        Dedup: tracker.DedupPolicy{
+            BypassMessages: []string{"bid.", "auction.", "order."},
+            // Composes with OR. A panic inside is recovered and treated
+            // as "no opinion" — never blocks capture.
+            BypassPredicate: func(e *tracker.Event) bool {
+                return e.Type == tracker.EventTypeEvent
+            },
+        },
+    })
+    defer tracker.Flush()
+
+    err := doWork()
+    if err != nil {
+        tracker.Error(err, map[string]any{ "stage": "process" })
+    }
+
+    tracker.Info("worker_started", nil)
+    tracker.Event("payout_completed", map[string]any{ "amount": 99.95 })
+}
+```
+
+## Surface
+
+| Method                                        | Notes                              |
+|-----------------------------------------------|------------------------------------|
+| `tracker.Init(cfg Config)`                    | One-time init. Idempotent.         |
+| `tracker.Error(err error, payload map)`       | Captures `error.Error()` + stack.  |
+| `tracker.Warn(msg string, payload map)`       |                                    |
+| `tracker.Info(msg string, payload map)`       |                                    |
+| `tracker.Debug(msg string, payload map)`      | Subject to MinLevel filter.        |
+| `tracker.Event(name string, payload map)`     | Always passes severity filter.     |
+| `tracker.Track(prefixed string, payload)`     | Splits `'auction:stale'` → category + name. |
+| `tracker.SetContext(ctx map[string]any)`      | Sticky — stamped on every event.   |
+| `tracker.Flush() error`                       | Send queued events synchronously.  |
+| `tracker.Close() error`                       | `Flush()` + tear down. Defer this. |
+
+## Background flushing
+
+The Init call starts a goroutine that flushes the queue every
+`FlushInterval` (default 5s) or whenever the batch hits `BatchSize`
+(default 100). Failed batches retry with exponential backoff up to 3
+times before being dropped.
+
+For one-shot scripts, defer a `tracker.Close()` — it flushes and waits
+for the goroutine to exit cleanly. Without it, events queued in the
+final 5 seconds may be lost when the process exits.
+
+## Error wrapping
+
+`tracker.Error` calls `runtime.Caller` to capture the call site, and
+walks `errors.Unwrap` chains so the root cause shows up as the stack's
+top frame on the dashboard.
+
+## Error enrichment
+
+`Config.ErrorEnrichment` controls the optional fields on
+`event.error` — same wire-format knobs as the TS and PHP SDKs.
+
+```go
+// All optional fields on (default — same as the zero value).
+tracker.Config{ ErrorEnrichment: tracker.ErrorEnrichmentFull }
+
+// name/message/stack only.
+tracker.Config{ ErrorEnrichment: tracker.ErrorEnrichmentMinimal }
+
+// Per-field overrides — drop the previous chain but keep file/line/code.
+tracker.Config{
+    ErrorEnrichment: tracker.ErrorEnrichmentWithFields(tracker.ErrorEnrichmentFields{
+        File: true, Line: true, Code: true, Previous: false,
+    }),
+}
+```
+
+See [Concepts → Enrichment](/docs/concepts/enrichment/) for the full
+picture and the cross-SDK grammar.
+
+## See also
+
+- [HTTP API contract](/docs/api/contract/) — every Go SDK behaviour is
+  pin-down-able to a wire-format guarantee here.
+- [tracker-go on GitHub](https://github.com/rw3iss/tracker-go) —
+  source, issue tracker, release notes.

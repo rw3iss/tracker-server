@@ -1,0 +1,19 @@
+---
+// Head.astro — overrides Starlight's default Head so we can inject the
+// Mermaid zoom enhancement on every docs page. Including the helper
+// here (rather than per-page) means every page that has a Mermaid
+// diagram gets the click-to-zoom UX automatically — no opt-in needed.
+//
+// Also sets a global `<meta name="robots">` no-index, matching the
+// dashboard. The tracker docs are operator-facing internals and should
+// not appear in search results. The host's `/robots.txt`
+// (TrackerRobotsController) blocks well-behaved crawlers; the meta
+// tag covers the rest.
+
+import Default from '@astrojs/starlight/components/Head.astro';
+import MermaidZoom from './MermaidZoom.astro';
+---
+
+<meta name="robots" content="noindex, nofollow, noarchive, nosnippet" />
+<Default><slot /></Default>
+<MermaidZoom />

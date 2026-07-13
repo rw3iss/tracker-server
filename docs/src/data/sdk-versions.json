@@ -1,0 +1,24 @@
+{
+  "_comment": "Auto-updated for the TS SDK by bin/update-sdk-versions.mjs (runs before docs build). Go and PHP entries are hand-maintained until those repos cut tagged releases.",
+  "ts": {
+    "version": "0.4.0",
+    "commit": "9e86890",
+    "registry": "GitHub Packages",
+    "registryUrl": "https://github.com/rw3iss/tracker/pkgs/npm/tracker",
+    "repoUrl": "https://github.com/rw3iss/tracker"
+  },
+  "go": {
+    "version": null,
+    "commit": "da1974a",
+    "registry": "Go module — pin via commit SHA (no tagged releases yet)",
+    "registryUrl": "https://github.com/rw3iss/tracker-go",
+    "repoUrl": "https://github.com/rw3iss/tracker-go"
+  },
+  "php": {
+    "version": null,
+    "commit": "eb25bda",
+    "registry": "Composer — install from the rw3iss GitHub repo (no Packagist release yet)",
+    "registryUrl": "https://github.com/rw3iss/tracker-php",
+    "repoUrl": "https://github.com/rw3iss/tracker-php"
+  }
+}
