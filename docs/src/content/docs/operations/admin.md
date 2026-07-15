@@ -36,20 +36,20 @@ and shouldn't share secrets with read/write traffic.
 
 ```bash
 # Dry-run: count what would be deleted (does not delete)
-pnpm tracker:clear-events --app-id dev-alt-rw3iss --dry-run
+npm run tracker:clear-events -- --app-id dev-alt-rw3iss --dry-run
 
 # Targeted: delete events from one app
-pnpm tracker:clear-events --app-id dev-alt-rw3iss
+npm run tracker:clear-events -- --app-id dev-alt-rw3iss
 
 # Multi-app
-pnpm tracker:clear-events --app-ids web,api,auth
+npm run tracker:clear-events -- --app-ids web,api,auth
 
 # Time-bounded: drop debug events older than a week
-pnpm tracker:clear-events --type debug \
+npm run tracker:clear-events -- --type debug \
     --before "$(date -d '1 week ago' +%s%3N)"
 
 # Full wipe (requires explicit --all)
-pnpm tracker:clear-events --all
+npm run tracker:clear-events -- --all
 ```
 
 Available filters: `--app-id`, `--app-ids`, `--type`, `--status`,

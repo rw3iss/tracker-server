@@ -13,8 +13,8 @@ project. tracker-server serves the built static bundle at
 
 ```bash
 cd tracker-server/docs
-pnpm install
-pnpm dev      # http://localhost:4321
+npm install
+npm run dev      # http://localhost:4321
 ```
 
 The dev server hot-reloads markdown changes — write a page, save,
@@ -24,10 +24,10 @@ refresh.
 
 ```bash
 cd tracker-server/docs
-pnpm build    # writes ./dist
+npm run build    # writes ./dist
 ```
 
-`tracker-server`'s deploy workflow runs `pnpm docs:build` (a wrapper
+`tracker-server`'s deploy workflow runs `npm run docs:build` (a wrapper
 around the same `astro build`) so a fresh deploy always ships the
 latest content.
 
@@ -59,10 +59,10 @@ DOCS_PATH=manual            # → served at /manual
 ```
 
 The Astro build needs to know the mount path so its internal links
-resolve. Set `DOCS_BASE` to match before running `pnpm docs:build`:
+resolve. Set `DOCS_BASE` to match before running `npm run docs:build`:
 
 ```sh
-DOCS_BASE=/manual pnpm docs:build
+DOCS_BASE=/manual npm run docs:build
 ```
 
 ## Editing content

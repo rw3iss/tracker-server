@@ -36,17 +36,17 @@ static bundle that tracker-server serves conditionally.
 
 ```bash
 # One-time
-pnpm docs:install
+npm run docs:install
 
 # Live edit while writing content (separate dev server, hot reload)
-pnpm docs:dev      # http://localhost:4321
+npm run docs:dev      # http://localhost:4321
 
 # Produce the static bundle that the running server serves
-pnpm docs:build    # writes ./docs/dist
+npm run docs:build    # writes ./docs/dist
 
 # Run the API + serve the docs in one process
-pnpm build:all     # build the API and the docs together
-pnpm start         # docs available at http://localhost:4010/docs
+npm run build:all     # build the API and the docs together
+npm start         # docs available at http://localhost:4010/docs
 ```
 
 Toggle docs on/off and change the mount path:
@@ -101,16 +101,16 @@ The tracker uses TimescaleDB (a Postgres extension) for time-series optimized st
 ## Quick Start
 
 ```bash
-pnpm install
+npm install
 cp .env.example .env   # edit with real values
-pnpm dev               # development (direct writes, no queue)
+npm run dev               # development (direct writes, no queue)
 ```
 
 ## Production
 
 ```bash
-pnpm build             # SWC build (~200ms)
-pnpm start:prod        # or use PM2:
+npm run build             # SWC build (~200ms)
+npm start:prod        # or use PM2:
 pm2 start pm2.config.js
 ```
 

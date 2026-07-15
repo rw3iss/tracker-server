@@ -8,7 +8,7 @@
  * shows a changelog modal, and reloads. So this file is the single
  * source of truth for "which build is this".
  *
- * Run inside `pnpm dashboard:bundle` after the static cp from src/
+ * Run inside `npm run dashboard:bundle` after the static cp from src/
  * dashboard → dist/dashboard. Overwrites the placeholder shipped in
  * source so dev runs (no build) still load something sensible.
  */
