@@ -1,100 +1,40 @@
 name: Deploy Tracker Server
 
+# Push to main → ssh to the production box (InterServer, 162.35.181.92) and
+# refresh the checkout at /var/www/tracker: git pull → npm build → restart the
+# systemd unit. Runtime config lives on the server in /etc/tracker/tracker.env
+# (read by the unit's EnvironmentFile=), so no secrets are written here.
+#
+# Required secrets (Settings → Secrets and variables → Actions):
+#   DEPLOY_HOST     — production IP / hostname (162.35.181.92)
+#   DEPLOY_SSH_KEY  — private key whose pubkey is in rw3iss@server:~/.ssh/authorized_keys
 on:
   push:
-    branches: [production]
-  # Allow manual reruns — useful when a secret value changes without a
-  # code change (e.g. rotating TRACKER_ADMIN_KEY) so we can pick the
-  # new secret up without an empty commit.
+    branches: [main]
   workflow_dispatch:
+
+concurrency:
+  group: deploy-tracker
+  cancel-in-progress: false
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
       - name: Deploy to server
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.DEPLOY_HOST }}
-          username: ec2-user
+          username: rw3iss
           key: ${{ secrets.DEPLOY_SSH_KEY }}
-          envs: GH_TOKEN,DB_HOST,DB_PORT,DB_USER,DB_PASS,DB_NAME,REDIS_URL,TRACKER_API_KEYS,TRACKER_ADMIN_KEY
           script: |
             set -e
-            export NVM_DIR="$HOME/.nvm"
-            [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
-
-            APP_DIR="$HOME/apps/tracker-server"
-            REPO="https://${GH_TOKEN}@github.com/rw3iss/tracker-server.git"
-
-            # Clone or pull
-            if [ ! -d "$APP_DIR/.git" ]; then
-              rm -rf "$APP_DIR"
-              git clone "$REPO" "$APP_DIR"
-              cd "$APP_DIR"
-              git checkout production
-            else
-              cd "$APP_DIR"
-              git fetch origin production
-              git reset --hard origin/production
-            fi
-
-            # Write .npmrc for GitHub Packages
-            echo "@rw3iss:registry=https://npm.pkg.github.com" > .npmrc
-            echo "//npm.pkg.github.com/:_authToken=${GH_TOKEN}" >> .npmrc
-
-            # Install and build
+            cd /var/www/tracker
+            git fetch origin main -q
+            git reset --hard origin/main
             npm ci || npm install
             npm run build
-
-            # Build the Astro Starlight docs bundle if docs serving is on.
-            # Set DOCS_BASE so emitted asset URLs match the runtime mount.
-            if [ "${DOCS_ENABLED:-true}" != "false" ]; then
-                DOCS_BASE="/${DOCS_PATH:-docs}" npm run docs:build || \
-                    echo "[deploy] docs build failed — continuing without /docs"
-            fi
-
-            # Write .env. Optional secrets default to empty when not set on
-            # the repo — empty values make the consumer treat the feature as
-            # disabled (admin endpoints 404, ingest API key check is skipped).
-            cat > .env <<EOF
-            DB_HOST=${DB_HOST}
-            DB_PORT=${DB_PORT}
-            DB_USER=${DB_USER}
-            DB_PASS=${DB_PASS}
-            DB_NAME=${DB_NAME}
-            DB_SSL=false
-            REDIS_URL=${REDIS_URL}
-            PORT=4010
-            NODE_ENV=production
-            USE_QUEUE=false
-            DOCS_ENABLED=true
-            DOCS_PATH=docs
-            DASHBOARD_ENABLED=true
-            DASHBOARD_PATH=/
-            TRACKER_API_KEYS=${TRACKER_API_KEYS:-}
-            TRACKER_ADMIN_KEY=${TRACKER_ADMIN_KEY:-}
-            EOF
-            # Remove leading whitespace from heredoc
-            sed -i 's/^[[:space:]]*//' .env
-
-            # Restart with PM2
-            pm2 delete tracker-server 2>/dev/null || true
-            pm2 start dist/main.js --name tracker-server --cwd "$APP_DIR"
-            pm2 save
-
-            echo "Deployed successfully"
-        env:
-          GH_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
-          DB_HOST: ${{ secrets.TRACKER_DB_HOST }}
-          DB_PORT: ${{ secrets.TRACKER_DB_PORT }}
-          DB_USER: ${{ secrets.TRACKER_DB_USER }}
-          DB_PASS: ${{ secrets.TRACKER_DB_PASS }}
-          DB_NAME: ${{ secrets.TRACKER_DB_NAME }}
-          REDIS_URL: ${{ secrets.TRACKER_REDIS_URL }}
-          # Optional — both default to empty if the repo secret isn't set.
-          # Adding a secret named TRACKER_ADMIN_KEY enables the admin endpoint.
-          TRACKER_API_KEYS:  ${{ secrets.TRACKER_API_KEYS }}
-          TRACKER_ADMIN_KEY: ${{ secrets.TRACKER_ADMIN_KEY }}
+            sudo systemctl restart tracker
+            sleep 4
+            systemctl is-active tracker
+            echo "Deployed $(git rev-parse --short HEAD)"
